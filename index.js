@@ -9,48 +9,54 @@ const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const axios = require('axios');
 
-// Если у тебя есть файл data.js, убедись что он лежит рядом.
-// Если его нет в корне репозитория, закомментируй строку ниже.
+// Если файла data.js нет, закомментируй строку ниже
 const { seedDatabase } = require('./data');
 
 const app = express();
 
-// ПОРТ ИЗ ПАНЕЛИ
+// ПОРТ (берется из панели или 3000)
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors()); // Разрешаем всё, т.к. фронт и бэк на одном домене
+// --- MIDDLEWARE ---
+app.use(cors()); 
 app.use(express.json());
 
-// Uploads
+// ВАЖНО: Заголовки для работы Google Auth и изоляции процессов
+app.use((req, res, next) => {
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+    res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+    next();
+});
+
+// Папка для загрузок
 if (!fs.existsSync('Uploads')) fs.mkdirSync('Uploads');
 app.use('/Uploads', express.static(path.join(__dirname, 'Uploads')));
 
-// === РАЗДАЧА REACT СТАТИКИ ===
+// === РАЗДАЧА REACT (ПАПКА DIST) ===
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// Multer
+// Настройка Multer (загрузка картинок)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'Uploads/'),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
 });
 const upload = multer({ storage });
 
-// Константы
+// КОНСТАНТЫ
 const SECRET_KEY = 'smart-nexus-secret-key-hardcore';
 const BOT_TOKEN = "7994786340:AAETOxVf_FvhTpI-FD4WrzellOV59npDyoU"; 
 const TG_ADMIN_ID = 1163547353; 
 
-// ПОДКЛЮЧЕНИЕ К POSTGRESQL (Твои данные)
+// ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ
 const pool = new Pool({
   user: 'test',
-  host: '127.0.0.1', // Локалхост внутри сервера
+  host: '127.0.0.1',
   database: 'test_db',
   password: 'b1789acC2A',
   port: 5432,
 });
 
-// Утилита Telegram
+// ФУНКЦИЯ ОТПРАВКИ В TELEGRAM
 async function sendTelegramMessage(chatId, text, keyboard = null) {
   if (!chatId) return;
   try {
@@ -60,31 +66,30 @@ async function sendTelegramMessage(chatId, text, keyboard = null) {
   } catch (e) { console.error('TG Error:', e.message); }
 }
 
-// INIT DB
+// ИНИЦИАЛИЗАЦИЯ БД ПРИ ЗАПУСКЕ
 (async () => {
   const client = await pool.connect();
   try {
-    // Создаем таблицы, если их нет
     await client.query(`CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, email VARCHAR(255) UNIQUE, password VARCHAR(255), name VARCHAR(255), picture VARCHAR(255), role VARCHAR(50) DEFAULT 'user', phone VARCHAR(50), status VARCHAR(50) DEFAULT 'active', last_login TIMESTAMP, ip VARCHAR(50), referral_code VARCHAR(100), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await client.query(`CREATE TABLE IF NOT EXISTS products (id SERIAL PRIMARY KEY, name VARCHAR(255), description TEXT, price DECIMAL(10,2), image VARCHAR(255), category VARCHAR(100) DEFAULT 'General', stock INTEGER DEFAULT 0, rating DECIMAL(2,1) DEFAULT 5.0, sku VARCHAR(50), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await client.query(`CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, user_id INTEGER, order_number INTEGER, status VARCHAR(50) DEFAULT 'placed', payment_status VARCHAR(50) DEFAULT 'pending', total DECIMAL(10,2), content TEXT, payment_method VARCHAR(50), delivery_address TEXT, tracking VARCHAR(100), telegram_chat_id BIGINT, telegram_username VARCHAR(255), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await client.query(`CREATE TABLE IF NOT EXISTS messages (id SERIAL PRIMARY KEY, user_name VARCHAR(255), email VARCHAR(255), text TEXT, subject VARCHAR(255) DEFAULT 'Chat', is_admin BOOLEAN DEFAULT FALSE, is_read BOOLEAN DEFAULT FALSE, ip VARCHAR(50), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await client.query(`CREATE TABLE IF NOT EXISTS logs (id SERIAL PRIMARY KEY, user_id INTEGER, username VARCHAR(255), method VARCHAR(10), url VARCHAR(255), action TEXT, ip VARCHAR(50), status_code INTEGER, details TEXT, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     
-    // Запускаем сидер, если он есть
+    // Заполнение тестовыми данными
     if (typeof seedDatabase === 'function') {
         await seedDatabase(pool);
     }
   } catch(e) { console.error(e); } finally { client.release(); }
 })();
 
-// Logger Middleware
+// ЛОГИРОВАНИЕ ЗАПРОСОВ
 app.use((req, res, next) => {
   if (req.url.startsWith('/Uploads') || req.method === 'OPTIONS') return next();
   const start = Date.now();
   res.on('finish', async () => {
-    // Логируем только API запросы, чтобы не засорять базу статикой
-    if (req.url.startsWith('/api')) {
+    // Логируем только API, не статику
+    if (!req.url.includes('.')) { 
         const duration = Date.now() - start;
         let username = 'Guest'; let uid = null;
         if (req.headers['authorization']) {
@@ -104,6 +109,7 @@ app.use((req, res, next) => {
   next();
 });
 
+// ПРОВЕРКА ТОКЕНА
 const auth = (req, res, next) => {
   const token = req.headers['authorization']?.split(' ')[1];
   if (!token) return res.status(401).json({message: 'No token'});
@@ -113,16 +119,17 @@ const auth = (req, res, next) => {
   });
 };
 
+// ПРОВЕРКА АДМИНА
 const checkAdmin = async (req, res, next) => {
   const result = await pool.query('SELECT role FROM users WHERE id = $1', [req.user.id]);
   if (result.rows[0].role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   next();
 };
 
-// ================= API ROUTES (Добавлен префикс /api) =================
+// ================= МАРШРУТЫ (БЕЗ /api) =================
 
-// AUTH
-app.post('/api/register', async (req, res) => {
+// АВТОРИЗАЦИЯ
+app.post('/register', async (req, res) => {
   try {
     const hash = await bcrypt.hash(req.body.password, 10);
     const result = await pool.query('INSERT INTO users (email, password, name, role, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING *', [req.body.email, hash, req.body.name, 'user']);
@@ -130,7 +137,8 @@ app.post('/api/register', async (req, res) => {
     res.json({ token, user: result.rows[0] });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
-app.post('/api/login', async (req, res) => {
+
+app.post('/login', async (req, res) => {
   try {
     const r = await pool.query('SELECT * FROM users WHERE email = $1', [req.body.email]);
     if (!r.rows.length) return res.status(400).json({ error: 'Not found' });
@@ -140,7 +148,8 @@ app.post('/api/login', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/auth/google', async (req, res) => {
+// GOOGLE ВХОД
+app.post('/auth/google', async (req, res) => {
   try {
     const { access_token } = req.body;
     const googleRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${access_token}` } });
@@ -156,78 +165,13 @@ app.post('/api/auth/google', async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Google Auth Failed' }); }
 });
 
-// GET REQUESTS
-app.get('/api/users', auth, async (req, res) => { 
+// ПОЛЬЗОВАТЕЛИ
+app.get('/users', auth, async (req, res) => { 
   const r = await pool.query('SELECT * FROM users ORDER BY id ASC'); 
   res.json(r.rows); 
 });
 
-app.get('/api/orders', auth, async (req, res) => {
-  try {
-    const r = await pool.query('SELECT * FROM orders WHERE user_id = $1 ORDER BY id DESC', [req.user.id]);
-    res.json(r.rows);
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-app.get('/api/admin/orders', auth, async (req, res) => {
-  try {
-    const r = await pool.query(`SELECT o.*, u.name as username, u.email as user_email FROM orders o LEFT JOIN users u ON o.user_id = u.id ORDER BY o.id DESC`);
-    res.json(r.rows);
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/messages', auth, async (req, res) => { 
-  try {
-    const userRes = await pool.query('SELECT role, name, email FROM users WHERE id = $1', [req.user.id]);
-    const u = userRes.rows[0];
-    const isAdmin = u.role === 'admin' || u.name === 'seth1nk' || u.email === 'admin@mail.ru';
-    if (isAdmin) {
-        const r = await pool.query('SELECT * FROM messages ORDER BY created_at ASC');
-        res.json(r.rows);
-    } else {
-        const r = await pool.query('SELECT * FROM messages WHERE email = $1 ORDER BY created_at ASC', [u.email]);
-        res.json(r.rows);
-    }
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-app.get('/api/admin/messages', auth, async (req, res) => {
-    const r = await pool.query('SELECT * FROM messages ORDER BY created_at DESC');
-    res.json(r.rows);
-});
-
-app.get('/api/messages/unread', auth, async (req, res) => {
-    try {
-        const r = await pool.query("SELECT COUNT(*) FROM messages WHERE is_admin = TRUE AND is_read = FALSE");
-        res.json({ count: parseInt(r.rows[0].count) });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/logs', auth, async (req, res) => { 
-    const r = await pool.query('SELECT * FROM logs ORDER BY timestamp DESC LIMIT 100'); 
-    res.json(r.rows); 
-});
-
-app.get('/api/products', async (req, res) => { 
-    const r = await pool.query('SELECT * FROM products ORDER BY id ASC'); 
-    res.json(r.rows); 
-});
-
-// ADMIN PRODUCT ACTIONS
-app.post('/api/admin/products', auth, checkAdmin, upload.single('image'), async (req, res) => {
-    const img = req.file ? `Uploads/${req.file.filename}` : '';
-    await pool.query('INSERT INTO products (name, description, price, image, category, created_at) VALUES ($1, $2, $3, $4, $5, NOW())', [req.body.name, req.body.description, req.body.price, img, req.body.category]);
-    res.json({ success: true });
-});
-app.put('/api/admin/products/:id', auth, checkAdmin, async (req, res) => { 
-    await pool.query('UPDATE products SET name=$1, price=$2, description=$3, category=$4 WHERE id=$5', [req.body.name, req.body.price, req.body.description, req.body.category, req.params.id]); 
-    res.json({ success: true }); 
-});
-app.delete('/api/admin/products/:id', auth, checkAdmin, async (req, res) => { 
-    await pool.query('DELETE FROM products WHERE id = $1', [req.params.id]); 
-    res.json({ success: true }); 
-});
-
-// USER ACTIONS
-app.put('/api/users/password', auth, async (req, res) => {
+app.put('/users/password', auth, async (req, res) => {
   try {
     const hash = await bcrypt.hash(req.body.newPassword, 10);
     await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hash, req.user.id]);
@@ -235,8 +179,22 @@ app.put('/api/users/password', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ORDERS ACTIONS
-app.post('/api/orders', auth, async (req, res) => {
+// ЗАКАЗЫ
+app.get('/orders', auth, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM orders WHERE user_id = $1 ORDER BY id DESC', [req.user.id]);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/admin/orders', auth, async (req, res) => {
+  try {
+    const r = await pool.query(`SELECT o.*, u.name as username, u.email as user_email FROM orders o LEFT JOIN users u ON o.user_id = u.id ORDER BY o.id DESC`);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/orders', auth, async (req, res) => {
   const { cart, delivery } = req.body;
   const total = cart.reduce((a,c) => a + c.price * c.qty, 0);
   const content = cart.map(i => `${i.name} (x${i.qty})`).join(', ');
@@ -248,7 +206,7 @@ app.post('/api/orders', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.put('/api/admin/orders/:id', auth, async (req, res) => {
+app.put('/admin/orders/:id', auth, async (req, res) => {
   try {
     const userRes = await pool.query('SELECT role, name, email FROM users WHERE id = $1', [req.user.id]);
     const u = userRes.rows[0];
@@ -269,8 +227,35 @@ app.put('/api/admin/orders/:id', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// CHAT & BOT
-app.post('/api/contact', async (req, res) => {
+// СООБЩЕНИЯ
+app.get('/messages', auth, async (req, res) => { 
+  try {
+    const userRes = await pool.query('SELECT role, name, email FROM users WHERE id = $1', [req.user.id]);
+    const u = userRes.rows[0];
+    const isAdmin = u.role === 'admin' || u.name === 'seth1nk' || u.email === 'admin@mail.ru';
+    if (isAdmin) {
+        const r = await pool.query('SELECT * FROM messages ORDER BY created_at ASC');
+        res.json(r.rows);
+    } else {
+        const r = await pool.query('SELECT * FROM messages WHERE email = $1 ORDER BY created_at ASC', [u.email]);
+        res.json(r.rows);
+    }
+  } catch(e) { res.status(500).json({error: e.message}); }
+});
+
+app.get('/admin/messages', auth, async (req, res) => {
+    const r = await pool.query('SELECT * FROM messages ORDER BY created_at DESC');
+    res.json(r.rows);
+});
+
+app.get('/messages/unread', auth, async (req, res) => {
+    try {
+        const r = await pool.query("SELECT COUNT(*) FROM messages WHERE is_admin = TRUE AND is_read = FALSE");
+        res.json({ count: parseInt(r.rows[0].count) });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/contact', async (req, res) => {
   try {
     const r = await pool.query('INSERT INTO messages (user_name, email, text, subject, is_admin, is_read, ip, created_at) VALUES ($1, $2, $3, $4, FALSE, FALSE, $5, NOW()) RETURNING *', [req.body.name, req.body.email, req.body.message, 'Chat', req.ip]);
     const kb = { inline_keyboard: [[{ text: "↩️ Ответить", callback_data: `reply_to_${req.body.email}` }]] };
@@ -278,12 +263,41 @@ app.post('/api/contact', async (req, res) => {
     res.json(r.rows[0]);
   } catch(e) { res.status(500).json({error: e.message}); }
 });
-app.post('/api/messages/read', auth, async (req, res) => {
+
+app.post('/messages/read', auth, async (req, res) => {
     await pool.query("UPDATE messages SET is_read = TRUE WHERE email = $1 AND is_admin = TRUE", [req.body.email]);
     res.json({ success: true });
 });
 
-// TELEGRAM BOT INTERNAL ROUTES (Used by polling bot if needed, or webhooks)
+// ПРОДУКТЫ
+app.get('/products', async (req, res) => { 
+    const r = await pool.query('SELECT * FROM products ORDER BY id ASC'); 
+    res.json(r.rows); 
+});
+
+app.post('/admin/products', auth, checkAdmin, upload.single('image'), async (req, res) => {
+    const img = req.file ? `Uploads/${req.file.filename}` : '';
+    await pool.query('INSERT INTO products (name, description, price, image, category, created_at) VALUES ($1, $2, $3, $4, $5, NOW())', [req.body.name, req.body.description, req.body.price, img, req.body.category]);
+    res.json({ success: true });
+});
+
+app.put('/admin/products/:id', auth, checkAdmin, async (req, res) => { 
+    await pool.query('UPDATE products SET name=$1, price=$2, description=$3, category=$4 WHERE id=$5', [req.body.name, req.body.price, req.body.description, req.body.category, req.params.id]); 
+    res.json({ success: true }); 
+});
+
+app.delete('/admin/products/:id', auth, checkAdmin, async (req, res) => { 
+    await pool.query('DELETE FROM products WHERE id = $1', [req.params.id]); 
+    res.json({ success: true }); 
+});
+
+// ЛОГИ
+app.get('/logs', auth, async (req, res) => { 
+    const r = await pool.query('SELECT * FROM logs ORDER BY timestamp DESC LIMIT 100'); 
+    res.json(r.rows); 
+});
+
+// TELEGRAM ВНУТРЕННЕЕ
 app.post('/api/internal/orders/link-telegram', async (req, res) => {
   try {
     await pool.query('UPDATE orders SET telegram_chat_id = $1, telegram_username = $2 WHERE id = $3', [req.body.telegramId, req.body.username || 'NoNick', req.body.orderId]);
@@ -292,11 +306,10 @@ app.post('/api/internal/orders/link-telegram', async (req, res) => {
   } catch(e) { res.status(500).json({error: e.message}); }
 });
 
-// === CATCH ALL FOR REACT SPA ===
-// Все запросы, не попавшие в /api или статику, идут на index.html
+// === CATCH ALL: ЛЮБОЙ ДРУГОЙ ЗАПРОС ОТДАЕТ REACT ===
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// START
+// ЗАПУСК
 app.listen(PORT, () => console.log(`SERVER RUNNING ON PORT ${PORT}`));

@@ -16,7 +16,7 @@ const Login = ({ showLogin, showRegister, onClose, onSuccess, onSwitchToReg, onS
   const googleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       try {
-        const res = await axios.post('http://localhost:5000/auth/google', {
+        const res = await axios.post('https://test.apt142.ru/auth/google', {
           access_token: tokenResponse.access_token,
         });
         localStorage.setItem('token', res.data.token);
@@ -37,7 +37,7 @@ const Login = ({ showLogin, showRegister, onClose, onSuccess, onSwitchToReg, onS
       // Имитация задержки для красоты анимации
       await new Promise(resolve => setTimeout(resolve, 800));
 
-      const endpoint = isRegister ? 'http://localhost:5000/register' : 'http://localhost:5000/login';
+      const endpoint = isRegister ? 'https://test.apt142.ru/register' : 'https://test.apt142.ru/login';
       const payload = isRegister 
         ? { email, password, name, referral_code: localStorage.getItem('referral_code') } 
         : { email, password };

@@ -19,7 +19,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors()); // Разрешаем всё, т.к. фронт и бэк на одном домене
+app.use(cors({ origin: 'https://test.apt142.ru' })); // Разрешаем всё, т.к. фронт и бэк на одном домене
 app.use(express.json());
 
 // Uploads

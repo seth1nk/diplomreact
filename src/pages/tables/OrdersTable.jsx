@@ -6,7 +6,7 @@ import {
   Clock, RefreshCw, AlertCircle
 } from 'lucide-react';
 
-const API_URL = 'http://localhost:5000';
+const API_URL = 'https://test.apt142.ru';
 
 const OrdersTable = ({ user }) => {
   const [orders, setOrders] = useState([]);

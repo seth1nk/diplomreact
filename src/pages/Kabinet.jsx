@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import UserAvatar from '../components/UserAvatar';
 
-const API_URL = 'http://localhost:5000';
+const API_URL = 'https://test.apt142.ru';
 
 const Kabinet = ({ user }) => {
   const [orders, setOrders] = useState([]);

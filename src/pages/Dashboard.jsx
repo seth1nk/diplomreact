@@ -29,8 +29,8 @@ const Dashboard = ({ user }) => {
       try {
         const token = localStorage.getItem('token');
         const [prodRes, orderRes] = await Promise.all([
-          axios.get('http://localhost:5000/products'),
-          axios.get('http://localhost:5000/orders', { headers: { Authorization: `Bearer ${token}` } })
+          axios.get('https://test.apt142.ru/products'),
+          axios.get('https://test.apt142.ru/orders', { headers: { Authorization: `Bearer ${token}` } })
         ]);
         setItems(prodRes.data);
         setOrders(orderRes.data);
@@ -169,7 +169,7 @@ const Dashboard = ({ user }) => {
                     {/* Картинка */}
                     <div className="relative h-48 w-full rounded-2xl overflow-hidden border border-[var(--glass-border)] bg-white p-4 group-hover:shadow-[0_0_20px_rgba(var(--accent-color),0.2)] transition-all">
                       <img 
-                        src={item.image.startsWith('http') ? item.image : `http://localhost:5000/${item.image}`} 
+                        src={item.image.startsWith('http') ? item.image : `https://test.apt142.ru/${item.image}`} 
                         className="w-full h-full object-contain group-hover:scale-110 transition-transform duration-500" 
                         alt={item.name} 
                       />
@@ -240,7 +240,7 @@ const Dashboard = ({ user }) => {
                 </div>
               ) : cart.map(c => (
                 <div key={c.id} className="flex gap-3 items-center bg-[var(--input-bg)] p-3 rounded-xl border border-[var(--glass-border)] hover:border-[var(--accent-color)]/30 transition-colors">
-                  <img src={c.image.startsWith('http') ? c.image : `http://localhost:5000/${c.image}`} className="w-12 h-12 rounded bg-white object-contain" />
+                  <img src={c.image.startsWith('http') ? c.image : `https://test.apt142.ru/${c.image}`} className="w-12 h-12 rounded bg-white object-contain" />
                   <div className="flex-1 min-w-0">
                     <span className="text-xs font-bold block text-[var(--text-color)] truncate">{c.name}</span>
                     <span className="text-xs text-[var(--accent-color)] font-mono">{c.price * c.qty}₽</span>

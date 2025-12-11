@@ -46,7 +46,7 @@ const NavBar = ({ user, onLogin, onLogout }) => {
         const checkUnread = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const res = await axios.get(`http://localhost:5000/messages/unread?email=${user.email}`, {
+                const res = await axios.get(`https://test.apt142.ru/messages/unread?email=${user.email}`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setUnreadCount(res.data.count);

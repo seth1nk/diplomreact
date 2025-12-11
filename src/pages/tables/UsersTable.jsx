@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Shield, User, Plus, X, Eye, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import ActionMenu from '../../components/ActionMenu';
 
-const API_URL = 'http://localhost:5000';
+const API_URL = 'https://test.apt142.ru';
 
 const UsersTable = ({ user }) => {
   const [users, setUsers] = useState([]);

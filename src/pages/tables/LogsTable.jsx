@@ -13,7 +13,7 @@ const LogsTable = ({ user }) => {
   const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
-    if (isAdmin) axios.get('http://localhost:5000/logs', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => setLogs(res.data));
+    if (isAdmin) axios.get('https://test.apt142.ru/logs', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }).then(res => setLogs(res.data));
   }, [isAdmin]);
 
   const indexOfLastItem = currentPage * itemsPerPage;

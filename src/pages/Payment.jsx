@@ -99,7 +99,7 @@ const Payment = () => {
       const token = localStorage.getItem('token');
       
       // 1. СОЗДАЕМ ЗАКАЗ В БАЗЕ
-      const res = await axios.post('http://localhost:5000/orders', {
+      const res = await axios.post('https://test.apt142.ru/orders', {
         cart: cart,       
         delivery: form    
       }, { 
@@ -243,7 +243,7 @@ const Payment = () => {
                   <div key={item.id} className="flex justify-between items-center text-sm p-3 rounded-xl bg-[var(--bg-color)]/50 border border-[var(--glass-border)]">
                     <div className="flex items-center gap-3 overflow-hidden">
                        <div className="w-10 h-10 rounded-lg bg-white p-1 shrink-0">
-                          <img src={item.image.startsWith('http') ? item.image : `http://localhost:5000/${item.image}`} className="w-full h-full object-contain" />
+                          <img src={item.image.startsWith('http') ? item.image : `https://test.apt142.ru/${item.image}`} className="w-full h-full object-contain" />
                        </div>
                        <div className="flex flex-col truncate">
                           <span className="font-bold text-[var(--text-color)] truncate">{item.name}</span>

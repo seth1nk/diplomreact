@@ -15,9 +15,9 @@ const Home = () => {
     const fetchStats = async () => {
       try {
         const [u, p, o] = await Promise.all([
-           axios.get('http://localhost:5000/users', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }}),
-           axios.get('http://localhost:5000/products'),
-           axios.get('http://localhost:5000/orders', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }})
+           axios.get('https://test.apt142.ru/users', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }}),
+           axios.get('https://test.apt142.ru/products'),
+           axios.get('https://test.apt142.ru/orders', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }})
         ]);
         setStats({ users: u.data.length, products: p.data.length, orders: o.data.length });
       } catch (e) {

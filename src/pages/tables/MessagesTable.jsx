@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Eye, Mail, User, Shield, RefreshCw, AlertCircle, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import ActionMenu from '../../components/ActionMenu';
-const API_URL = 'http://localhost:5000';
+const API_URL = 'https://test.apt142.ru';
 const MessagesTable = ({ user }) => {
   const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(false);

@@ -9,64 +9,66 @@ const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const axios = require('axios');
 
-// Если файла data.js нет, закомментируй строку ниже
-const { seedDatabase } = require('./data');
-
+// === НАСТРОЙКИ СЕРВЕРА ===
 const app = express();
-
-// ПОРТ (берется из панели или 3000)
+// Порт берется из панели (автоматически) или 3000
 const PORT = process.env.PORT || 3000;
 
-// --- MIDDLEWARE ---
-app.use(cors()); 
-app.use(express.json());
-
-// ВАЖНО: Заголовки для работы Google Auth и изоляции процессов
+// === ЗАГОЛОВКИ БЕЗОПАСНОСТИ (ЛЕЧИМ GOOGLE AUTH) ===
 app.use((req, res, next) => {
+    // Разрешает всплывающее окно Google
     res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+    // Разрешает загрузку ресурсов
     res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+    // Исправляет проблемы с редиректами
+    res.setHeader("Referrer-Policy", "no-referrer-when-downgrade");
     next();
 });
 
-// Папка для загрузок
+// === MIDDLEWARE ===
+app.use(cors()); // Разрешаем CORS
+app.use(express.json());
+
+// === СТАТИКА (ФАЙЛЫ) ===
+// 1. Папка для загруженных картинок
 if (!fs.existsSync('Uploads')) fs.mkdirSync('Uploads');
 app.use('/Uploads', express.static(path.join(__dirname, 'Uploads')));
 
-// === РАЗДАЧА REACT (ПАПКА DIST) ===
+// 2. Раздача REACT (папка dist)
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// Настройка Multer (загрузка картинок)
+// Настройка загрузчика файлов
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'Uploads/'),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
 });
 const upload = multer({ storage });
 
-// КОНСТАНТЫ
+// === КОНФИГУРАЦИЯ ===
 const SECRET_KEY = 'smart-nexus-secret-key-hardcore';
 const BOT_TOKEN = "7994786340:AAETOxVf_FvhTpI-FD4WrzellOV59npDyoU"; 
 const TG_ADMIN_ID = 1163547353; 
 
-// ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ
+// === ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ ===
 const pool = new Pool({
   user: 'test',
-  host: 'apt142.ru',
+  host: '127.0.0.1',
   database: 'test_db',
-  password: 'bc7A2C891a',
+  password: 'b1789acC2A',
   port: 5432,
 });
 
-// ФУНКЦИЯ ОТПРАВКИ В TELEGRAM
-async function sendTelegramMessage(chatId, text, keyboard = null) {
-  if (!chatId) return;
-  try {
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      chat_id: chatId, text: text, parse_mode: 'HTML', reply_markup: keyboard
-    });
-  } catch (e) { console.error('TG Error:', e.message); }
-}
+// === БЕЗОПАСНЫЙ ИМПОРТ DATA.JS ===
+// Если файла нет, сервер не упадет
+let seedDatabase = null;
+try {
+    if (fs.existsSync('./data.js')) {
+        const dataModule = require('./data');
+        seedDatabase = dataModule.seedDatabase;
+    }
+} catch (e) { console.error("Info: data.js не загружен или содержит ошибки."); }
 
-// ИНИЦИАЛИЗАЦИЯ БД ПРИ ЗАПУСКЕ
+// === ИНИЦИАЛИЗАЦИЯ ТАБЛИЦ ===
 (async () => {
   const client = await pool.connect();
   try {
@@ -76,19 +78,20 @@ async function sendTelegramMessage(chatId, text, keyboard = null) {
     await client.query(`CREATE TABLE IF NOT EXISTS messages (id SERIAL PRIMARY KEY, user_name VARCHAR(255), email VARCHAR(255), text TEXT, subject VARCHAR(255) DEFAULT 'Chat', is_admin BOOLEAN DEFAULT FALSE, is_read BOOLEAN DEFAULT FALSE, ip VARCHAR(50), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     await client.query(`CREATE TABLE IF NOT EXISTS logs (id SERIAL PRIMARY KEY, user_id INTEGER, username VARCHAR(255), method VARCHAR(10), url VARCHAR(255), action TEXT, ip VARCHAR(50), status_code INTEGER, details TEXT, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
     
-    // Заполнение тестовыми данными
-    if (typeof seedDatabase === 'function') {
-        await seedDatabase(pool);
-    }
-  } catch(e) { console.error(e); } finally { client.release(); }
+    // Запускаем заполнение базы, если есть функция
+    if (seedDatabase) await seedDatabase(pool);
+    
+    console.log("✅ База данных готова");
+  } catch(e) { console.error("❌ Ошибка БД:", e.message); } 
+  finally { client.release(); }
 })();
 
-// ЛОГИРОВАНИЕ ЗАПРОСОВ
+// === ЛОГИРОВАНИЕ ЗАПРОСОВ ===
 app.use((req, res, next) => {
   if (req.url.startsWith('/Uploads') || req.method === 'OPTIONS') return next();
   const start = Date.now();
   res.on('finish', async () => {
-    // Логируем только API, не статику
+    // Не логируем статику (файлы с точкой, типа .js, .css, .png)
     if (!req.url.includes('.')) { 
         const duration = Date.now() - start;
         let username = 'Guest'; let uid = null;
@@ -109,7 +112,16 @@ app.use((req, res, next) => {
   next();
 });
 
-// ПРОВЕРКА ТОКЕНА
+// === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+async function sendTelegramMessage(chatId, text, keyboard = null) {
+  if (!chatId) return;
+  try {
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      chat_id: chatId, text: text, parse_mode: 'HTML', reply_markup: keyboard
+    });
+  } catch (e) { console.error('TG Error:', e.message); }
+}
+
 const auth = (req, res, next) => {
   const token = req.headers['authorization']?.split(' ')[1];
   if (!token) return res.status(401).json({message: 'No token'});
@@ -119,16 +131,17 @@ const auth = (req, res, next) => {
   });
 };
 
-// ПРОВЕРКА АДМИНА
 const checkAdmin = async (req, res, next) => {
-  const result = await pool.query('SELECT role FROM users WHERE id = $1', [req.user.id]);
-  if (result.rows[0].role !== 'admin') return res.status(403).json({ error: 'Admin only' });
-  next();
+  try {
+      const result = await pool.query('SELECT role FROM users WHERE id = $1', [req.user.id]);
+      if (result.rows[0]?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+      next();
+  } catch(e) { res.status(500).json({ error: 'DB Error' }); }
 };
 
-// ================= МАРШРУТЫ (БЕЗ /api) =================
+// ================= МАРШРУТЫ API =================
 
-// АВТОРИЗАЦИЯ
+// --- АВТОРИЗАЦИЯ ---
 app.post('/register', async (req, res) => {
   try {
     const hash = await bcrypt.hash(req.body.password, 10);
@@ -148,24 +161,32 @@ app.post('/login', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GOOGLE ВХОД
+// --- GOOGLE AUTH ---
 app.post('/auth/google', async (req, res) => {
   try {
     const { access_token } = req.body;
+    // Получаем данные от Google
     const googleRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${access_token}` } });
     const { email, name, picture } = googleRes.data;
+    
+    // Ищем или создаем пользователя
     let user = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     let userId;
+    
     if (user.rows.length === 0) {
       const newUser = await pool.query('INSERT INTO users (email, name, picture, referral_code, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING *', [email, name, picture, uuidv4()]);
       userId = newUser.rows[0].id; user = newUser;
     } else userId = user.rows[0].id;
+    
     const token = jwt.sign({ id: userId, name: user.rows[0].name }, SECRET_KEY);
     res.json({ token, user: user.rows[0] });
-  } catch (e) { res.status(500).json({ error: 'Google Auth Failed' }); }
+  } catch (e) { 
+      console.error("Google Auth Error:", e.message);
+      res.status(500).json({ error: 'Google Auth Failed' }); 
+  }
 });
 
-// ПОЛЬЗОВАТЕЛИ
+// --- ПОЛЬЗОВАТЕЛИ ---
 app.get('/users', auth, async (req, res) => { 
   const r = await pool.query('SELECT * FROM users ORDER BY id ASC'); 
   res.json(r.rows); 
@@ -179,7 +200,7 @@ app.put('/users/password', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ЗАКАЗЫ
+// --- ЗАКАЗЫ ---
 app.get('/orders', auth, async (req, res) => {
   try {
     const r = await pool.query('SELECT * FROM orders WHERE user_id = $1 ORDER BY id DESC', [req.user.id]);
@@ -227,7 +248,7 @@ app.put('/admin/orders/:id', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// СООБЩЕНИЯ
+// --- СООБЩЕНИЯ ---
 app.get('/messages', auth, async (req, res) => { 
   try {
     const userRes = await pool.query('SELECT role, name, email FROM users WHERE id = $1', [req.user.id]);
@@ -269,7 +290,7 @@ app.post('/messages/read', auth, async (req, res) => {
     res.json({ success: true });
 });
 
-// ПРОДУКТЫ
+// --- ПРОДУКТЫ ---
 app.get('/products', async (req, res) => { 
     const r = await pool.query('SELECT * FROM products ORDER BY id ASC'); 
     res.json(r.rows); 
@@ -291,13 +312,13 @@ app.delete('/admin/products/:id', auth, checkAdmin, async (req, res) => {
     res.json({ success: true }); 
 });
 
-// ЛОГИ
+// --- ЛОГИ ---
 app.get('/logs', auth, async (req, res) => { 
     const r = await pool.query('SELECT * FROM logs ORDER BY timestamp DESC LIMIT 100'); 
     res.json(r.rows); 
 });
 
-// TELEGRAM ВНУТРЕННЕЕ
+// --- ВНУТРЕННИЕ (BOT) ---
 app.post('/api/internal/orders/link-telegram', async (req, res) => {
   try {
     await pool.query('UPDATE orders SET telegram_chat_id = $1, telegram_username = $2 WHERE id = $3', [req.body.telegramId, req.body.username || 'NoNick', req.body.orderId]);
@@ -306,10 +327,11 @@ app.post('/api/internal/orders/link-telegram', async (req, res) => {
   } catch(e) { res.status(500).json({error: e.message}); }
 });
 
-// === CATCH ALL: ЛЮБОЙ ДРУГОЙ ЗАПРОС ОТДАЕТ REACT ===
+// === CATCH-ALL ROUTE (ДЛЯ REACT SPA) ===
+// Этот блок должен быть В САМОМ КОНЦЕ, после всех API роутов
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// ЗАПУСК
+// === ЗАПУСК ===
 app.listen(PORT, () => console.log(`SERVER RUNNING ON PORT ${PORT}`));

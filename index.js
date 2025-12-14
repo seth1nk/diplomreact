@@ -217,10 +217,25 @@ app.put('/admin/orders/:id', auth, async (req, res) => {
     const orderRes = await pool.query('SELECT order_number, telegram_chat_id, telegram_username FROM orders WHERE id = $1', [req.params.id]);
     const order = orderRes.rows[0];
     
+    // --- КРАСИВЫЕ СТАТУСЫ ---
+    const statusMap = {
+        'placed': '🆕 НОВЫЙ',
+        'processing': '⚙️ В РАБОТЕ',
+        'shipped': '🚚 ОТПРАВЛЕН / В ПУТИ',
+        'completed': '✅ ВЫПОЛНЕН',
+        'cancelled': '❌ ОТМЕНЕН'
+    };
+
     if (order && order.telegram_chat_id) {
-        let msg = `📦 <b>Заказ #${order.order_number} обновлен!</b>\nСтатус: ${status}`;
+        const prettyStatus = statusMap[status] || status;
+        
+        let msg = `🔔 <b>ОБНОВЛЕНИЕ СТАТУСА</b>\n\n` + 
+                  `📦 Заказ: <b>#${order.order_number}</b>\n` +
+                  `💬 Новый статус: <b>${prettyStatus}</b>`;
+                  
         await sendTelegramMessage(order.telegram_chat_id, msg);
     }
+    // ------------------------
 
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }

@@ -63,12 +63,12 @@ const OrdersTable = ({ user }) => {
 
   const advanceStatus = async (id, currentStatus) => {
     let nextStatus = '';
-    if (currentStatus === 'processing') nextStatus = 'shipped'; // В пути
-    else if (currentStatus === 'shipped') nextStatus = 'completed'; // Выполнен
-    else return; // placed переводим вручную, либо добавь сюда case 'placed': nextStatus = 'processing'
 
-    // Если статус 'placed' (новый), сначала переводим в 'processing' (в работу)
-    if (currentStatus === 'placed') nextStatus = 'processing';
+    // Исправленная логика: проверяем все варианты по порядку
+    if (currentStatus === 'placed') nextStatus = 'processing';      // Новый -> В работу
+    else if (currentStatus === 'processing') nextStatus = 'shipped'; // В работе -> В пути
+    else if (currentStatus === 'shipped') nextStatus = 'completed';  // В пути -> Готов
+    else return; // Если статус уже completed или cancelled, ничего не делаем
 
     if (!window.confirm(`Перевести заказ в статус "${nextStatus.toUpperCase()}"? Клиент получит уведомление.`)) return;
 
@@ -77,7 +77,10 @@ const OrdersTable = ({ user }) => {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } 
       });
       fetchOrders(); // Обновляем таблицу
-    } catch(e) { alert('Ошибка обновления статуса'); }
+    } catch(e) { 
+      console.error(e);
+      alert('Ошибка обновления статуса'); 
+    }
   };
 
   const cancelOrder = async (id) => {

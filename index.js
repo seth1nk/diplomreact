@@ -63,9 +63,9 @@ const TG_ADMIN_ID = 1163547353;
 // === ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ ===
 const pool = new Pool({
   user: 'test',
-  host: '127.0.0.1',
+  host: 'apt142.ru',
   database: 'test_db',
-  password: '798a231cBb',
+  password: '97318Aa2bc',
   port: 5432,
 });
 

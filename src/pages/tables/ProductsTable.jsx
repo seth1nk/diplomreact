@@ -6,7 +6,7 @@ import ActionMenu from '../../components/ActionMenu';
 const API_URL = 'https://test.apt142.ru';
 
 const ProductsTable = ({ user }) => {
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState([]); 
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewData, setViewData] = useState(null);
@@ -60,6 +60,15 @@ const ProductsTable = ({ user }) => {
       } catch(e) { alert("Ошибка сохранения"); }
   };
 
+  // --- ФУНКЦИЯ ДЛЯ ПРАВИЛЬНОГО URL КАРТИНКИ ---
+  const getImageUrl = (img) => {
+      if (!img) return null;
+      if (img.startsWith('http') || img.startsWith('https')) {
+          return img; // Внешняя ссылка
+      }
+      return `${API_URL}/${img}`; // Локальный файл
+  };
+
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = products.slice(indexOfFirstItem, indexOfLastItem);
@@ -101,7 +110,11 @@ const ProductsTable = ({ user }) => {
                         <tr key={p.id} className="hover:bg-[var(--accent-color)]/5 border-b border-[var(--glass-border)] last:border-0 transition-colors">
                         <td className="p-4">
                             {p.image ? (
-                                <img src={`${p.image}`} className="w-10 h-10 object-cover rounded bg-black/20" alt={p.name}/>
+                                <img 
+                                    src={getImageUrl(p.image)} 
+                                    className="w-10 h-10 object-cover rounded bg-black/20" 
+                                    alt={p.name}
+                                />
                             ) : (
                                 <div className="w-10 h-10 bg-[var(--glass-border)] rounded flex items-center justify-center text-xs opacity-50">NO</div>
                             )}
@@ -173,7 +186,11 @@ const ProductsTable = ({ user }) => {
             {/* Левая часть - Картинка */}
             <div className="w-full md:w-1/2 h-64 md:h-auto bg-black relative flex items-center justify-center overflow-hidden">
                 {viewData.image ? (
-                    <img src={`${API_URL}/${viewData.image}`} className="w-full h-full object-cover opacity-80" alt={viewData.name}/>
+                    <img 
+                        src={getImageUrl(viewData.image)} 
+                        className="w-full h-full object-cover opacity-80" 
+                        alt={viewData.name}
+                    />
                 ) : (
                     <div className="text-[var(--glass-border)]"><AlertCircle size={48}/></div>
                 )}

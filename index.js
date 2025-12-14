@@ -65,7 +65,7 @@ const pool = new Pool({
   user: 'test',
   host: 'apt142.ru',
   database: 'test_db',
-  password: '97318Aa2bc',
+  password: '1A3B9a7Cbc',
   port: 5432,
 });
 

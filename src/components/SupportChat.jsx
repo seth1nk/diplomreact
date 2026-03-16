@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Send, X, MessageSquare, User, Shield, RefreshCw, Check, CheckCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_URL = 'https://test.apt142.ru';
+const API_URL = 'https://diplomreact.apt142.ru';
 
 const SupportChat = ({ isOpen, onClose, user }) => {
   const [messages, setMessages] = useState([]);

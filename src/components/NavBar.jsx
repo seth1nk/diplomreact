@@ -1,188 +1,421 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Cpu, LogOut, User, MessageCircle } from 'lucide-react';
-import LightDark from './lightdark';
-import UserAvatar from './UserAvatar';
-import SupportChat from './SupportChat';
+import { 
+  ShoppingCart, 
+  History, 
+  Trash2, 
+  Plus, 
+  Minus, 
+  ArrowLeft, 
+  ArrowRight, 
+  Package, 
+  Cpu, 
+  ChevronLeft, 
+  ChevronRight 
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import Status from '../components/Status';
 
-const navLinks = [
-  { path: '/', label: 'ГЛАВНАЯ' },
-  { path: '/about', label: 'О НАС' },
-  { path: '/contact', label: 'КОНТАКТЫ' },
+const API_URL = 'https://diplomreact.apt142.ru';
+
+// Маппинг категорий для фильтрации и кнопок
+const categoryMap = [
+  { label: 'Все', value: 'Все' },
+  { label: 'Датчики', value: 'sensors' },
+  { label: 'Камеры', value: 'cameras' },
+  { label: 'Освещение', value: 'lighting' },
+  { label: 'Хабы', value: 'hubs' }
 ];
 
-const catalogLink = [
-  { path: '/dashboard', label: 'КАТАЛОГ' }
-];
+// Функция перевода для плашек на карточках
+const translateCategory = (cat) => {
+  const map = {
+    sensors: 'ДАТЧИКИ',
+    cameras: 'КАМЕРЫ',
+    lighting: 'ОСВЕЩЕНИЕ',
+    hubs: 'ХАБЫ'
+  };
+  return map[cat] || cat.toUpperCase();
+};
 
-const NavBar = ({ user, onLogin, onLogout }) => {
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
-  const [hoveredPath, setHoveredPath] = useState(null);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [isChatOpen, setIsChatOpen] = useState(false); 
+const Dashboard = ({ user }) => {
+  // --- ДАННЫЕ ---
+  const [items, setItems] = useState([]);
+  const [cart, setCart] = useState(() => JSON.parse(localStorage.getItem('cart') || '[]'));
+  const [orders, setOrders] = useState([]);
+  
+  // --- СОСТОЯНИЯ ИНТЕРФЕЙСА ---
+  const [loading, setLoading] = useState(true);
+  const [selectedCat, setSelectedCat] = useState('Все');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isPaused, setIsPaused] = useState(false); // Пауза карусели
+  const [orderIndex, setOrderIndex] = useState(0); // Индекс карусели
+
+  const itemsPerPage = 9;
   const navigate = useNavigate();
-  const location = useLocation();
-
-  const isAdmin = user?.role === 'admin';
-  const roleLabel = isAdmin ? 'ADMIN' : 'OPERATOR';
-  const roleColorClass = isAdmin ? 'text-red-500' : 'text-[var(--accent-color)]';
-  const adminColorClass = 'text-red-500';
-
-  // --- 1. ТАБЛИЦЫ ОБОРУДОВАНИЯ (ЧИСТЫЕ ПУТИ ДЛЯ ВСЕХ) ---
-  const equipmentLinks = [
-    { path: '/hubs', label: 'ХАБЫ' },
-    { path: '/cameras', label: 'КАМЕРЫ' },
-    { path: '/lighting', label: 'СВЕТ' },
-    { path: '/sensors', label: 'ДАТЧИКИ' },
-  ];
-
-  // --- 2. ТАБЛИЦЫ УПРАВЛЕНИЯ (ТОЛЬКО АДМИНУ) ---
-  const adminManagementLinks = [
-    { path: '/users', label: 'ПОЛЬЗОВАТЕЛИ' },
-    { path: '/orders', label: 'ЗАКАЗЫ' },
-    { path: '/messages', label: 'ЧАТЫ' },
-    { path: '/admin/logs', label: 'ЛОГИ' },
-  ];
-
+  
+  // ЗАГРУЗКА ДАННЫХ
   useEffect(() => {
-    document.body.className = theme;
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+    const fetchData = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const [prodRes, orderRes] = await Promise.all([
+          axios.get(`${API_URL}/products`),
+          axios.get(`${API_URL}/orders`, { headers: { Authorization: `Bearer ${token}` } })
+        ]);
+        setItems(prodRes.data);
+        setOrders(orderRes.data);
+      } catch (e) { 
+        console.error("Ошибка загрузки данных системы:", e); 
+      } finally { 
+        setLoading(false); 
+      }
+    };
+    fetchData();
+  }, []);
 
+  // Сохранение корзины
   useEffect(() => {
-    if (user) {
-        const checkUnread = async () => {
-            try {
-                const token = localStorage.getItem('token');
-                const res = await axios.get(`https://diplomreact.apt142.ru/messages/unread?email=${user.email}`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setUnreadCount(res.data.count);
-            } catch (e) {}
-        };
-        checkUnread();
-        const interval = setInterval(checkUnread, 5000);
-        return () => clearInterval(interval);
+    localStorage.setItem('cart', JSON.stringify(cart));
+  }, [cart]);
+
+  // Сброс страницы при смене категории
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCat]);
+
+  // === ЛОГИКА ОГРАНИЧЕНИЯ КНОПОК ПАГИНАЦИИ (МАКС 12) ===
+  const getPaginationGroup = (totalPages) => {
+    let start = Math.max(1, currentPage - 5);
+    let end = Math.min(totalPages, start + 11);
+    if (end - start < 11) {
+      start = Math.max(1, end - 11);
     }
-  }, [user]);
+    const pages = [];
+    for (let i = Math.max(1, start); i <= end; i++) {
+      pages.push(i);
+    }
+    return pages;
+  };
 
-  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+  // === ЛОГИКА КАРУСЕЛИ (ЛОГ ОПЕРАЦИЙ) ===
+  useEffect(() => {
+    if (orders.length <= 5 || isPaused) return; 
+    
+    const interval = setInterval(() => {
+      setOrderIndex((prev) => (prev + 1) % orders.length);
+    }, 2000); // Скорость: 2 секунды
+    
+    return () => clearInterval(interval);
+  }, [orders, isPaused]);
 
-  const renderMenu = (links) => (
-    <div className="relative flex items-center bg-[var(--input-bg)]/50 backdrop-blur-md border border-[var(--glass-border)] px-1 py-1 rounded-none shadow-sm overflow-x-auto no-scrollbar"> 
-      {links.map((link) => (
-        <Link 
-          key={link.path}
-          to={link.path}
-          onMouseEnter={() => setHoveredPath(link.path)}
-          onMouseLeave={() => setHoveredPath(null)}
-          className="relative px-3 xl:px-4 py-3 text-[9px] xl:text-[10px] font-bold tracking-widest text-[var(--text-color)] transition-colors hover:text-[var(--accent-color)] uppercase z-10 whitespace-nowrap"
-        >
-          {link.label}
-          
-          {hoveredPath === link.path && (
-            <motion.div
-              layoutId="navbar-hover"
-              className="absolute inset-0 bg-[var(--accent-color)]/10 border border-[var(--accent-color)]/50 z-[-1]"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-            >
-                <div className="absolute bottom-0 left-0 w-1 h-1 border-l border-b border-[var(--accent-color)]" />
-                <div className="absolute top-0 right-0 w-1 h-1 border-r border-t border-[var(--accent-color)]" />
-            </motion.div>
-          )}
+  const nextOrder = () => setOrderIndex((prev) => (prev + 1) % orders.length);
+  const prevOrder = () => setOrderIndex((prev) => (prev - 1 + orders.length) % orders.length);
 
-          {location.pathname === link.path && (
-            <motion.div 
-                layoutId="navbar-active"
-                className="absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--accent-color)] shadow-[0_0_10px_var(--accent-color)]"
-            />
-          )}
-        </Link>
-      ))}
+  // Получение 5 видимых заказов
+  const getVisibleOrders = () => {
+    if (orders.length === 0) return [];
+    if (orders.length < 5) return orders;
+    
+    const result = [];
+    for (let i = 0; i < 5; i++) {
+      result.push(orders[(orderIndex + i) % orders.length]);
+    }
+    return result;
+  };
+  const visibleOrders = getVisibleOrders();
+
+  // === ЛОГИКА КОРЗИНЫ (ID + КАТЕГОРИЯ ДЛЯ УНИКАЛЬНОСТИ) ===
+  const addToCart = (item) => {
+    setCart(prev => {
+      const exist = prev.find(i => i.id === item.id && i.category === item.category);
+      if (exist) {
+        return prev.map(i => (i.id === item.id && i.category === item.category) ? {...i, qty: i.qty + 1} : i);
+      }
+      return [...prev, {...item, qty: 1}];
+    });
+  };
+
+  const removeFromCart = (id, category) => {
+    setCart(prev => prev.filter(i => !(i.id === id && i.category === category)));
+  };
+
+  const updateQty = (id, category, delta) => {
+    setCart(prev => prev.map(i => {
+      if (i.id === id && i.category === category) {
+        return { ...i, qty: Math.max(1, i.qty + delta) };
+      }
+      return i;
+    }));
+  };
+
+  const handlePayment = () => {
+    if(cart.length === 0) return;
+    localStorage.setItem('tempCart', JSON.stringify(cart));
+    navigate('/payment');
+  };
+
+  // === ЛОГИКА ПАГИНАЦИИ И ФИЛЬТРОВ ===
+  const filteredItems = selectedCat === 'Все' ? items : items.filter(i => i.category === selectedCat);
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+  const currentItems = filteredItems.slice(
+    (currentPage - 1) * itemsPerPage, 
+    currentPage * itemsPerPage
+  );
+
+  const getImageUrl = (img) => {
+    if (!img) return null;
+    return img.startsWith('http') ? img : `${API_URL}/${img}`;
+  };
+
+  if (loading) return (
+    <div className="h-screen flex flex-col items-center justify-center gap-4 bg-[var(--bg-color)]">
+       <div className="w-16 h-16 border-4 border-[var(--accent-color)] border-t-transparent rounded-full animate-spin"/>
+       <span className="text-[var(--accent-color)] font-mono text-xl animate-pulse">ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ...</span>
     </div>
   );
 
   return (
-    <>
-      <nav className="fixed top-0 w-full z-50 glass h-24 flex items-center transition-all duration-300 border-b border-[var(--glass-border)]">
-        <div className="max-w-[1900px] mx-auto px-6 w-full flex items-center justify-between gap-4">
-          
-          <Link to="/" className="flex items-center gap-3 group shrink-0">
-            <div className="p-2 bg-[var(--accent-color)]/10 rounded-lg border border-[var(--accent-color)]/30 group-hover:shadow-[0_0_20px_var(--accent-color)] transition-all">
-              <Cpu className="text-[var(--accent-color)] w-6 h-6" />
-            </div>
-            <span className="font-black text-2xl tracking-widest hidden 2xl:block text-[var(--text-color)]">NEXUS</span>
-          </Link>
+    <div className="flex flex-col gap-12 pb-20 max-w-[1900px] mx-auto min-h-screen px-4 pt-24">
+      
+      {/* === HEADER & FILTERS === */}
+      <motion.div 
+        initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
+        className="flex flex-col xl:flex-row justify-between items-end border-b border-[var(--glass-border)] pb-8 gap-6"
+      >
+        <div>
+          <h1 className="text-5xl font-black text-[var(--text-color)] mb-2 uppercase tracking-tighter">
+            ТЕРМИНАЛ <span className="text-transparent bg-clip-text bg-gradient-to-r from-[var(--accent-color)] to-purple-600">NEXUS</span>
+          </h1>
+          <p className="text-[var(--text-color)] opacity-60 font-mono text-sm uppercase">
+            :: OPERATOR: {user?.name} :: STATUS: ACTIVE
+          </p>
+        </div>
 
-          <div className="hidden lg:flex items-center gap-4 flex-1 justify-center">
-             {renderMenu(navLinks)}
-             
-             {user && (
-               <>
-                  <div className="w-px h-8 bg-[var(--glass-border)] mx-1" /> 
-                  {renderMenu(catalogLink)}
-
-                  <div className="w-px h-8 bg-[var(--glass-border)] mx-1" /> 
-                  {/* Группа таблиц оборудования доступна всем авторизованным */}
-                  {renderMenu(equipmentLinks)}
-
-                  {isAdmin && (
-                    <>
-                      <div className="w-px h-8 bg-[var(--glass-border)] mx-1" /> 
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[8px] font-black tracking-widest opacity-70 hidden xl:block ${adminColorClass}`}>
-                            ADMIN_DB:
-                        </span>
-                        {renderMenu(adminManagementLinks)}
+        {/* Кнопки категорий (Активная - с черным текстом) */}
+        <div className="flex flex-wrap gap-2">
+          {categoryMap.map(cat => (
+            <button 
+              key={cat.value}
+              onClick={() => setSelectedCat(cat.value)}
+              className={`px-5 py-2 rounded-xl font-bold text-xs uppercase tracking-widest transition-all border ${
+                selectedCat === cat.value 
+                ? 'bg-[var(--accent-color)] text-black border-[var(--accent-color)] shadow-[0_0_20px_var(--accent-color)]' 
+                : 'glass text-[var(--text-color)] hover:bg-[var(--input-bg)] border-[var(--glass-border)]'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+      </motion.div>
+      
+      <div className="flex flex-col xl:flex-row gap-8 relative items-start">
+        
+        {/* === ЛЕВАЯ КОЛОНКА: КАТАЛОГ ТОВАРОВ === */}
+        <div className="flex-1 w-full min-w-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-6 mb-12">
+            <AnimatePresence mode='wait'>
+              {currentItems.map((item) => (
+                <motion.div 
+                  key={`${item.category}-${item.id}`}
+                  initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+                  layout
+                  className="uiverse-card group h-[380px] w-full border border-[var(--glass-border)] hover:border-[var(--accent-color)]/30 transition-colors"
+                >
+                  <div className="uiverse-card-content p-5 flex flex-col h-full justify-between bg-[var(--card-bg)]">
+                    
+                    <div className="relative h-48 w-full rounded-2xl overflow-hidden border border-[var(--glass-border)] bg-white p-4 group-hover:shadow-[0_0_20px_rgba(var(--accent-color),0.2)] transition-all">
+                      <img 
+                        src={getImageUrl(item.image)} 
+                        className="w-full h-full object-contain group-hover:scale-110 transition-transform duration-500" 
+                        alt={item.name} 
+                      />
+                      <div className="absolute top-2 left-2 bg-black/80 px-2 py-1 rounded text-[10px] text-white font-bold uppercase backdrop-blur-md border border-white/10">
+                        {translateCategory(item.category)}
                       </div>
-                    </>
-                  )}
-               </>
-             )}
+                      <div className="absolute top-3 right-3 bg-black/80 px-3 py-1 rounded-lg text-[var(--accent-color)] font-bold font-mono border border-[var(--accent-color)]/30">
+                        {item.price} ₽
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                       <h3 className="font-black text-lg text-[var(--text-color)] uppercase leading-none truncate" title={item.name}>{item.name}</h3>
+                       <p className="text-xs text-[var(--text-color)] opacity-50 mt-2 line-clamp-2 h-8">{item.description}</p>
+                    </div>
+
+                    <button 
+                      onClick={() => addToCart(item)}
+                      className="mt-4 w-full py-3 rounded-xl bg-[var(--accent-color)]/10 text-[var(--accent-color)] font-bold text-xs tracking-[0.2em] border border-[var(--accent-color)]/20 hover:bg-[var(--accent-color)] hover:text-black transition-all flex items-center justify-center gap-2 active:scale-95"
+                    >
+                      {cart.some(c => c.id === item.id && c.category === item.category) ? 'В ХРАНИЛИЩЕ' : 'ИНТЕГРИРОВАТЬ'} <Plus size={14} /> 
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
 
-          <div className="flex items-center gap-4 shrink-0">
-            <div className="scale-75 origin-right hidden sm:block">
-               <LightDark toggleTheme={toggleTheme} isLight={theme === 'light'} />
+          {/* === ПАГИНАЦИЯ (ОГРАНИЧЕНА ДО 12 КНОПОК) === */}
+          {totalPages > 1 && (
+            <div className="flex justify-center gap-2 items-center mb-8">
+              <button 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                disabled={currentPage === 1} 
+                className="p-2 rounded-lg glass hover:bg-[var(--accent-color)] hover:text-black transition-all disabled:opacity-30"
+              >
+                <ArrowLeft size={20}/>
+              </button>
+              
+              <div className="flex gap-1 overflow-hidden">
+                {getPaginationGroup(totalPages).map((i) => (
+                  <button
+                    key={i}
+                    onClick={() => setCurrentPage(i)}
+                    className={`w-10 h-10 rounded-lg font-bold font-mono transition-all shrink-0 ${
+                      currentPage === i 
+                      ? 'bg-[var(--accent-color)] text-black shadow-[0_0_15px_var(--accent-color)]' 
+                      : 'glass hover:bg-white/10 opacity-50 hover:opacity-100'
+                    }`}
+                  >
+                    {i}
+                  </button>
+                ))}
+              </div>
+
+              <button 
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                disabled={currentPage === totalPages} 
+                className="p-2 rounded-lg glass hover:bg-[var(--accent-color)] hover:text-black transition-all disabled:opacity-30"
+              >
+                <ArrowRight size={20}/>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* === ПРАВАЯ КОЛОНКА: КОРЗИНА (STICKY) === */}
+        <div className="w-full xl:w-[400px] shrink-0">
+          <div className="glass p-6 rounded-[2rem] sticky top-28 border border-[var(--glass-border)] shadow-2xl">
+            <div className="flex justify-between items-center mb-6 pb-4 border-b border-[var(--glass-border)]">
+              <h3 className="text-xl font-black text-[var(--text-color)] flex items-center gap-3 tracking-wider">
+                <ShoppingCart size={20} className="text-[var(--accent-color)]" /> КОРЗИНА
+              </h3>
+              <span className="text-xs font-mono bg-black/40 px-2 py-1 rounded text-[var(--accent-color)] border border-[var(--glass-border)] uppercase">
+                {cart.length} MODS
+              </span>
+            </div>
+            
+            <div className="flex flex-col gap-3 mb-6 max-h-[400px] overflow-y-auto pr-1 custom-scroll">
+              {cart.length === 0 ? (
+                <div className="text-center py-12 opacity-30 flex flex-col items-center border-2 border-dashed border-[var(--glass-border)] rounded-xl">
+                   <Package size={40} className="mb-2" />
+                   <p className="font-mono text-xs uppercase tracking-widest">Хранилище пусто</p>
+                </div>
+              ) : cart.map(c => (
+                <div key={`${c.category}-${c.id}`} className="flex gap-3 items-center bg-black/20 p-3 rounded-xl border border-[var(--glass-border)] hover:border-[var(--accent-color)]/30 transition-colors">
+                  <img src={getImageUrl(c.image)} className="w-12 h-12 rounded bg-white object-contain p-1" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[11px] font-bold block text-[var(--text-color)] truncate uppercase">{c.name}</span>
+                    <span className="text-xs text-[var(--accent-color)] font-mono">{c.price * c.qty} ₽</span>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <button onClick={() => removeFromCart(c.id, c.category)} className="text-gray-500 hover:text-red-500 transition-colors">
+                      <Trash2 size={14}/>
+                    </button>
+                    <div className="flex items-center gap-1 bg-black/40 rounded-md p-0.5 border border-white/5">
+                      <button onClick={() => updateQty(c.id, c.category, -1)} className="p-0.5 hover:text-[var(--accent-color)]"><Minus size={10}/></button>
+                      <span className="font-mono text-[10px] font-bold w-4 text-center">{c.qty}</span>
+                      <button onClick={() => updateQty(c.id, c.category, 1)} className="p-0.5 hover:text-[var(--accent-color)]"><Plus size={10}/></button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
 
-            {user ? (
-              <div className="flex items-center gap-4 pl-4 border-l border-[var(--glass-border)]">
-                <button onClick={() => { setIsChatOpen(!isChatOpen); setUnreadCount(0); }} 
-                        className={`p-2 rounded-full transition-all duration-300 relative ${isChatOpen ? 'bg-[var(--accent-color)] text-black' : 'text-[var(--text-color)] hover:text-[var(--accent-color)] bg-[var(--accent-color)]/10'}`}>
-                  <MessageCircle size={18} />
-                  {unreadCount > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_red]" />}
-                </button>
-
-                <div onClick={() => navigate('/kabinet')} className="flex items-center gap-3 cursor-pointer group">
-                  <div className="text-right hidden sm:block">
-                    <span className={`text-[8px] uppercase block font-black tracking-widest transition-colors ${roleColorClass}`}>{roleLabel}</span>
-                    <span className="text-xs font-bold block leading-none text-[var(--text-color)]">{user.name}</span>
-                  </div>
-                  <UserAvatar user={user} className="w-9 h-9 rounded-full border border-transparent group-hover:border-[var(--accent-color)] transition-all" />
-                </div>
-                
-                <button onClick={onLogout} className="text-[var(--text-color)] opacity-50 hover:opacity-100 hover:text-red-500 transition-all">
-                  <LogOut size={20} />
-                </button>
+            <div className="border-t border-[var(--glass-border)] pt-4">
+              <div className="flex justify-between mb-4 items-end">
+                <span className="text-[var(--text-color)] opacity-60 font-bold text-[10px] uppercase tracking-widest">Итого</span>
+                <span className="text-xl font-black text-[var(--accent-color)] font-mono">
+                  {cart.reduce((a, c) => a + c.price * c.qty, 0).toLocaleString()} ₽
+                </span>
               </div>
-            ) : (
-              <button onClick={onLogin} className="btn-neon text-[10px] font-bold px-5 py-3 flex items-center gap-2 shadow-lg tracking-widest uppercase">
-                <User size={14}/> Войти
+              {/* КНОПКА: Активная с черным текстом */}
+              <button 
+                onClick={handlePayment} 
+                disabled={cart.length === 0} 
+                className="w-full py-4 bg-[var(--accent-color)] text-black font-black tracking-[0.2em] rounded-xl disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(var(--accent-color),0.3)] hover:shadow-[0_0_40px_rgba(var(--accent-color),0.5)] flex justify-center items-center gap-3 transition-all active:scale-95"
+              >
+                <Cpu size={18} />
+                ИНИЦИАЛИЗАЦИЯ
               </button>
-            )}
+            </div>
           </div>
         </div>
-      </nav>
+      </div>
 
-      {user && <SupportChat isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} user={user} />}
-    </>
+      {/* === ИСТОРИЯ ЗАКАЗОВ (НИЖНЯЯ КАРУСЕЛЬ) === */}
+      {orders.length > 0 && (
+        <div 
+          className="mt-12 border-t border-[var(--glass-border)] pt-10"
+          onMouseEnter={() => setIsPaused(true)}
+          onMouseLeave={() => setIsPaused(false)}
+        >
+          <div className="flex justify-between items-center mb-6 px-4">
+            <h3 className="text-3xl font-black text-[var(--text-color)] flex items-center gap-3 uppercase tracking-wider">
+              <History className="text-[var(--accent-color)]" size={32} /> ЛОГ ОПЕРАЦИЙ
+            </h3>
+            
+            <div className="flex gap-2">
+              <button onClick={prevOrder} className="p-3 rounded-xl glass border border-[var(--glass-border)] hover:border-[var(--accent-color)] hover:text-[var(--accent-color)] transition-all active:scale-90">
+                <ChevronLeft size={24} />
+              </button>
+              <button onClick={nextOrder} className="p-3 rounded-xl glass border border-[var(--glass-border)] hover:border-[var(--accent-color)] hover:text-[var(--accent-color)] transition-all active:scale-90">
+                <ChevronRight size={24} />
+              </button>
+            </div>
+          </div>
+          
+          <div className="relative w-full overflow-hidden py-4 px-4">
+             <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-6">
+               <AnimatePresence mode='popLayout'>
+                 {visibleOrders.map((order, i) => (
+                   <motion.div 
+                     key={`${order.id}-${orderIndex}-${i}`} 
+                     initial={{ x: 100, opacity: 0 }}
+                     animate={{ x: 0, opacity: 1 }}
+                     exit={{ x: -100, opacity: 0 }}
+                     transition={{ duration: 0.4, ease: "easeInOut" }}
+                     className="glass p-5 rounded-3xl border border-[var(--glass-border)] relative overflow-hidden group min-h-[220px] flex flex-col justify-between hover:border-[var(--accent-color)]/30 transition-colors bg-[var(--card-bg)]/50"
+                   >
+                      <div className={`absolute top-0 left-0 w-1.5 h-full ${order.status === 'completed' ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-blue-500 shadow-[0_0_10px_#3b82f6]'}`} />
+                      
+                      <div>
+                        <div className="flex justify-between items-start mb-4">
+                          <span className="font-mono text-[10px] px-2 py-1 rounded bg-white/5 border border-white/10 opacity-60">
+                            #{order.order_number}
+                          </span>
+                          <span className="font-bold text-lg text-[var(--text-color)]">{order.total}₽</span>
+                        </div>
+                        
+                        <p className="text-xs text-[var(--text-color)] opacity-70 font-bold leading-relaxed mb-4 line-clamp-3">
+                          {order.content || 'Системный заказ оборудования Nexus'}
+                        </p>
+                      </div>
+                      
+                      <div className="w-full mt-auto">
+                        <Status status={order.status} date={new Date(order.created_at || order.date).toLocaleDateString()} />
+                      </div>
+                   </motion.div>
+                 ))}
+               </AnimatePresence>
+             </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
-export default NavBar;
+export default Dashboard;

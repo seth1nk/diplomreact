@@ -62,10 +62,10 @@ const TG_ADMIN_ID = 1163547353;
 
 // === ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ ===
 const pool = new Pool({
-  user: 'test',
+  user: 'diplomreact',
   host: 'apt142.ru',
-  database: 'test_db',
-  password: '1A3B9a7Cbc',
+  database: 'diplomreact_db',
+  password: 'acAB39b218',
   port: 5432,
 });
 

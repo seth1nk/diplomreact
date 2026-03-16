@@ -20,7 +20,11 @@ import Kabinet from './pages/Kabinet';
 // SMART TABLES (Теперь берутся из новой папки)
 import UsersTable from './pages/tables/UsersTable';
 import OrdersTable from './pages/tables/OrdersTable';
-import ProductsTable from './pages/tables/ProductsTable';
+// ДОБАВЬ ЭТИ ВМЕСТО ProductsTable:
+import HubsTable from './pages/tables/HubsTable';
+import CamerasTable from './pages/tables/CamerasTable';
+import LightingTable from './pages/tables/LightingTable';
+import SensorsTable from './pages/tables/SensorsTable';
 import LogsTable from './pages/tables/LogsTable';
 import MessagesTable from './pages/tables/MessagesTable';
 
@@ -93,12 +97,15 @@ function AppContent() {
             <Route path="/kabinet" element={<div className="pt-24 px-4"><Kabinet user={user} /></div>} />
             
             
-            {/* ТАБЛИЦЫ (Доступны всем авторизованным, но внутри разный функционал) */}
+            {/* ТАБЛИЦЫ ОБОРУДОВАНИЯ (Доступны всем авторизованным) */}
+            <Route path="/hubs" element={<HubsTable user={user} />} />
+            <Route path="/cameras" element={<CamerasTable user={user} />} />
+            <Route path="/lighting" element={<LightingTable user={user} />} />
+            <Route path="/sensors" element={<SensorsTable user={user} />} />
+
+            {/* ТАБЛИЦЫ УПРАВЛЕНИЯ (Админские) */}
             <Route path="/users" element={<UsersTable user={user} />} />
             <Route path="/orders" element={<OrdersTable user={user} />} />
-            <Route path="/products" element={<ProductsTable user={user} />} />
-            
-            {/* ЛОГИ и СООБЩЕНИЯ (Внутри компонента LogsTable стоит заглушка Access Denied для не-админов) */}
             <Route path="/admin/logs" element={<LogsTable user={user} />} />
             <Route path="/messages" element={<MessagesTable />} />
           </>
